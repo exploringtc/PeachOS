@@ -136,7 +136,7 @@ struct filesystem* fat16_init()
     strcpy(fat16_fs.name, "FAT16");
     return &fat16_fs;
 }
-
+////
 static void fat16_init_private(struct disk* disk, struct fat_private* private)
 {
     memset(private, 0, sizeof(struct fat_private));
@@ -145,12 +145,12 @@ static void fat16_init_private(struct disk* disk, struct fat_private* private)
     private->directory_stream = diskstreamer_new(disk->id);
 }
 
-
+///
 int fat16_sector_to_absolute(struct disk* disk, int sector)
 {
     return sector * disk->sector_size;
 }
-
+///
 int fat16_get_total_items_for_directory(struct disk* disk, uint32_t directory_start_sector)
 {
     struct fat_directory_item item;

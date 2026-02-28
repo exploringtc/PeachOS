@@ -4,14 +4,17 @@
 #include "pparser.h"
 
 typedef unsigned int FILE_SEEK_MODE;
-enum {
+enum
+{
     SEEK_SET,
     SEEK_CUR,
     SEEK_END
 };
 
+
 typedef unsigned int FILE_MODE;
-enum {
+enum
+{ 
     FILE_MODE_READ,
     FILE_MODE_WRITE,
     FILE_MODE_APPEND,
@@ -19,45 +22,34 @@ enum {
 };
 
 struct disk;
-
-// These are function pointers to be inherited by a particular filesystem driver.
-typedef void* (*FS_OPEN_FUNCTION)(struct disk* disk, struct path_part* path, FILE_MODE mode);
+typedef void*(*FS_OPEN_FUNCTION)(struct disk* disk, struct path_part* path, FILE_MODE mode);
 typedef int (*FS_RESOLVE_FUNCTION)(struct disk* disk);
 
-struct filesystem{
-    // The filesystem should return zero from resolve if the provided disk is using its filesystem
-    // When the VFS layer wants to determine a filesystem, it will loop through all available registered
-    // filesystems and run resolve. if it returns zero, then the filesystem driver is indicating that
-    // it understands how to read the given disk.
-    FS_RESOLVE_FUNCTION resolve;
-    
-    //this function pointer is called when we opened a file in a given filesystem.
-    FS_OPEN_FUNCTION open;
 
-    // This is the name of the filesystem, for example "FAT16".
+struct filesystem
+{
+    // Filesystem should return zero from resolve if the provided disk is using its filesystem
+    FS_RESOLVE_FUNCTION resolve;
+    FS_OPEN_FUNCTION open;
 
     char name[20];
 };
 
-//File descriptors represent open files. when you call "fopen",
-// a file is opened and a file descriptor is created to represent it.
-struct file_descriptor {
-    // the descriptor index.
+struct file_descriptor
+{
+    // The descriptor index
     int index;
-
-    // the filesystem that this particular file is in
     struct filesystem* filesystem;
 
     // Private data for internal file descriptor
     void* private;
 
-    // The disk that the file descriptor should be used on.
+    // The disk that the file descriptor should be used on
     struct disk* disk;
 };
 
 void fs_init();
-int fopen(const char* filename, const char* module);
+int fopen(const char* filename, const char* mode_str);
 void fs_insert_filesystem(struct filesystem* filesystem);
 struct filesystem* fs_resolve(struct disk* disk);
-
 #endif
