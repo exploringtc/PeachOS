@@ -1,13 +1,4 @@
-🔍-
-100%
-🔍+
-⚊
-◧
-🔄
-🔍
-✕
-⚙️
-📋 Document Outline
+Document Outline
 No headings found
 
 Multi-Level Paging & 64-Bit Long Mode

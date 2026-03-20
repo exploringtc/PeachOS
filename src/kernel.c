@@ -1,38 +1,38 @@
 #include "kernel.h"
-#include <stddef.h>
 #include <stdint.h>
-#include "idt/idt.h"
-#include "memory/heap/kheap.h"
-#include "memory/paging/paging.h"
-#include "memory/memory.h"
-#include "string/string.h"
-#include "fs/file.h"
-#include "disk/disk.h"
-#include "fs/pparser.h"
-#include "disk/streamer.h"
-#include "task/tss.h"
-#include "gdt/gdt.h"
-#include "config.h"
-uint16_t* video_mem = 0;
-uint16_t terminal_row = 0;
-uint16_t terminal_col = 0;
 
-uint16_t terminal_make_char(char c, char colour)
+// EDIT 09: This minimal VGA/debug output path gives the project a stable 64-bit proof-of-execution target without relying on old 32-bit subsystems.
+static volatile uint16_t* video_mem = (volatile uint16_t*) 0xB8000;
+static uint16_t terminal_row = 0;
+static uint16_t terminal_col = 0;
+
+static inline void debug_putc(char c)
 {
-    return (colour << 8) | c;
+    __asm__ volatile ("outb %0, $0xE9" : : "a"((uint8_t)c));
+}
+
+static uint16_t terminal_make_char(char c, uint8_t colour)
+{
+    return ((uint16_t) colour << 8) | (uint8_t) c;
 }
 
 void terminal_putchar(int x, int y, char c, char colour)
 {
-    video_mem[(y * VGA_WIDTH) + x] = terminal_make_char(c, colour);
+    video_mem[(y * VGA_WIDTH) + x] = terminal_make_char(c, (uint8_t) colour);
 }
 
 void terminal_writechar(char c, char colour)
 {
+    debug_putc(c);
+
     if (c == '\n')
     {
         terminal_row += 1;
         terminal_col = 0;
+        if (terminal_row >= VGA_HEIGHT)
+        {
+            terminal_row = 0;
+        }
         return;
     }
 
@@ -42,103 +42,60 @@ void terminal_writechar(char c, char colour)
     {
         terminal_col = 0;
         terminal_row += 1;
+        if (terminal_row >= VGA_HEIGHT)
+        {
+            terminal_row = 0;
+        }
     }
 }
-void terminal_initialize()
+
+void terminal_initialize(void)
 {
-    video_mem = (uint16_t*)(0xB8000);
     terminal_row = 0;
     terminal_col = 0;
     for (int y = 0; y < VGA_HEIGHT; y++)
     {
         for (int x = 0; x < VGA_WIDTH; x++)
         {
-            terminal_putchar(x, y, ' ', 0);
+            terminal_putchar(x, y, ' ', 0x00);
         }
-    }   
+    }
 }
-
-
 
 void print(const char* str)
 {
-    size_t len = strlen(str);
-    for (int i = 0; i < len; i++)
+    if (!str)
     {
-        terminal_writechar(str[i], 15);
+        return;
+    }
+
+    while (*str)
+    {
+        terminal_writechar(*str, 0x0F);
+        str++;
     }
 }
-
-
-static struct paging_4gb_chunk* kernel_chunk = 0;
 
 void panic(const char* msg)
 {
+    print("PANIC: ");
     print(msg);
-    while(1) {}
+    for (;;)
+    {
+        __asm__ volatile ("hlt");
+    }
 }
 
-struct tss tss;
-struct gdt gdt_real[PEACHOS_TOTAL_GDT_SEGMENTS];
-struct gdt_structured gdt_structured[PEACHOS_TOTAL_GDT_SEGMENTS] = {
-    {.base = 0x00, .limit = 0x00, .type = 0x00},                // NULL Segment
-    {.base = 0x00, .limit = 0xffffffff, .type = 0x9a},           // Kernel code segment
-    {.base = 0x00, .limit = 0xffffffff, .type = 0x92},            // Kernel data segment
-    {.base = 0x00, .limit = 0xffffffff, .type = 0xf8},              // User code segment
-    {.base = 0x00, .limit = 0xffffffff, .type = 0xf2},             // User data segment
-    {.base = (uint32_t)&tss, .limit=sizeof(tss), .type = 0xE9}      // TSS Segment
-};
-void kernel_main()
+// EDIT 10: This simplified kernel entry prints confirmation messages after the long mode transition so QEMU and GDB can verify the four-level paging bootstrap cleanly.
+void kernel_main(void)
 {
     terminal_initialize();
-    print("Hello world!\ntest");
+    print("PeachOS entered 64-bit long mode\n");
+    print("4-level paging bootstrap active\n");
+    print("Use GDB to inspect RIP, CR0, CR3, CR4, and the PML4\n");
 
-    memset(gdt_real, 0x00, sizeof(gdt_real));
-    gdt_structured_to_gdt(gdt_real, gdt_structured, PEACHOS_TOTAL_GDT_SEGMENTS);
-
-    // Load the gdt
-    gdt_load(gdt_real, sizeof(gdt_real));
-
-    // Initialize the heap
-    kheap_init();
-
-    // Initialize filesystems
-    fs_init();
-
-    // Search and initialize the disks
-    disk_search_and_init();
-
-    // Initialize the interrupt descriptor table
-    idt_init();
-
-    // Setup the TSS
-    memset(&tss, 0x00, sizeof(tss));
-    tss.esp0 = 0x600000;
-    tss.ss0 = KERNEL_DATA_SELECTOR;
-
-    // Load the TSS
-    tss_load(0x28);
-
-    // Setup paging
-    kernel_chunk = paging_new_4gb(PAGING_IS_WRITEABLE | PAGING_IS_PRESENT | PAGING_ACCESS_FROM_ALL);
-    
-    // Switch to kernel paging chunk
-    paging_switch(paging_4gb_chunk_get_directory(kernel_chunk));
-
-    // Enable paging
-    enable_paging();
-    
-    // Enable the system interrupts
-    enable_interrupts();
-
-    int fd = fopen("0:/hello.txt", "r");
-    if (fd)
+    for (;;)
     {
-        struct file_stat s;
-        fstat(fd, &s);
-        fclose(fd);
-
-        print("testing\n");
+        __asm__ volatile ("hlt");
     }
-    while(1) {}
 }

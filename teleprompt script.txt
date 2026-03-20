@@ -1,0 +1,446 @@
+PeachOS Multi-Level Paging & 64-Bit Long Mode
+Teleprompter Script for Video Demo and Report
+Date: 2026-03-19
+
+Purpose
+- This script is designed for the screen-recorded demo and the written report.
+- It focuses on Task 3.3, Task 3.4, Task 4, and Submission Requirement 5 from the assignment.
+- It also aligns with the grading rubric in src/multilevelpaginggradingrubric.txt.
+
+Suggested Recording Layout
+- Left side: terminal/QEMU/GDB windows.
+- Right side: VS Code editor with the relevant source files open.
+- Zoom in enough so register values and file edits are readable.
+- When the script says POINT or HIGHLIGHT, pause the mouse there for 2 to 3 seconds.
+
+================================================================================
+SECTION 1 - OPENING STATEMENT
+================================================================================
+
+Say:
+"In this demo, I will show my implementation of four-level paging and the transition from 32-bit protected mode into 64-bit long mode in PeachOS. I will also verify the implementation using QEMU and GDB, which is required by the rubric."
+
+POINT:
+- The assignment file: src/multilevelpaging.txt
+- The rubric file: src/multilevelpaginggradingrubric.txt
+
+HIGHLIGHT:
+- In src/multilevelpaging.txt, the Task 3.3 section on four-level paging.
+- In src/multilevelpaging.txt, the Task 3.4 section on hardware-level verification.
+- In src/multilevelpaginggradingrubric.txt, the sections mentioning kernel_main, info registers, CR0, CR4, CR3, PML4 dump, and organized screenshots.
+
+Say:
+"The main goals were to implement a valid PML4-based paging hierarchy, enter long mode correctly, boot the kernel in QEMU, and prove correctness using control registers and memory inspection in GDB."
+
+================================================================================
+SECTION 2 - TASK 3.3: IMPLEMENTING FOUR-LEVEL PAGING
+================================================================================
+
+Say:
+"I will first show the source files that I edited to implement the four-level paging bootstrap and long mode entry. The key files I edited were kernel assembly, the kernel C entry file, the linker script, and the build system."
+
+POINT:
+- src/kernel.asm
+- src/kernel.c
+- src/linker.ld
+- Makefile
+
+--------------------------------------------------------------------------------
+Part 2.1 - Explain the main implementation file: src/kernel.asm
+--------------------------------------------------------------------------------
+
+Open file:
+- src/kernel.asm
+
+Say:
+"The main implementation of the paging hierarchy and long mode transition is in src/kernel.asm. This file was rewritten to replace the old 32-bit-only startup path with a minimal bootstrap that creates the required four-level paging structures."
+
+Say:
+"For reference during the demo, the source files now contain numbered comment markers labeled EDIT 01 through EDIT 15. I will point to those markers as I explain each project change."
+
+POINT:
+- The `_start` label in src/kernel.asm
+
+HIGHLIGHT:
+- `_start`
+- `setup_page_tables`
+- `long_mode_start`
+- `gdt64`
+- `pml4_table`
+- `pdpt_table`
+- `pd_table`
+- `pt_table`
+
+Say:
+"In this file, I made several major changes. First, I kept the CPU in 32-bit protected mode at startup, because the bootloader still transfers control that way. Then I added a bootstrap routine to build a four-level page table hierarchy consisting of a PML4, a PDPT, a PD, and a PT."
+
+Say:
+"At the top of this file, EDIT 11 explains the bootstrap constants, EDIT 12 marks the actual long mode transition sequence, EDIT 13 marks the page-table creation routine, EDIT 14 marks the first 64-bit code path, and EDIT 15 marks the 64-bit GDT and aligned paging structures."
+
+Say:
+"The reason I edited this file was that the assignment specifically requires a four-level x86_64 paging hierarchy and a real transition into 64-bit long mode. The old file only called kernel_main directly in 32-bit mode, so it could not satisfy the rubric."
+
+POINT:
+- The constant definitions near the top of src/kernel.asm
+
+Say:
+"These constants define the segment selectors, the stack address, the EFER MSR, and the control register flag values used to enable long mode and paging."
+
+POINT:
+- The `setup_page_tables` function
+
+Say:
+"In setup_page_tables, I linked each paging level together. The first PML4 entry points to the PDPT. The first PDPT entry points to the page directory. The first page directory entry points to the page table. Then I filled the page table so that the first 2 megabytes of memory are identity-mapped using 4-kilobyte pages."
+
+HIGHLIGHT:
+- The instruction that stores the PDPT pointer into the PML4
+- The instruction that stores the PD pointer into the PDPT
+- The instruction that stores the PT pointer into the PD
+- The page-table filling loop labeled `.map_pt`
+
+Say:
+"I used identity mapping here because the CPU is still executing low-level bootstrap code and the kernel is loaded at a known physical address. Identity mapping the low region makes early boot reliable and is sufficient for demonstrating correct page translation and long mode entry."
+
+Say:
+"This satisfies the Task 3.3 requirement that the paging hierarchy be properly aligned, linked, and populated with valid 64-bit entries containing the proper flags."
+
+--------------------------------------------------------------------------------
+Part 2.2 - Explain the control register transition in src/kernel.asm
+--------------------------------------------------------------------------------
+
+POINT:
+- The instructions in `_start` after `setup_page_tables`
+
+HIGHLIGHT:
+- `lgdt [gdt64_descriptor]`
+- `mov eax, cr4` / `or eax, CR4_PAE` / `mov cr4, eax`
+- `rdmsr` / `wrmsr` for `IA32_EFER`
+- `mov cr3, eax`
+- `mov eax, cr0` / `or eax, CR0_PG` / `mov cr0, eax`
+- `jmp CODE_SEG:long_mode_start`
+
+Say:
+"After the page tables are built, I load a 64-bit GDT, enable PAE in CR4, enable Long Mode Enable in the EFER model-specific register, load CR3 with the PML4 address, and then set the paging bit in CR0. Finally, I perform a far jump into a 64-bit code segment."
+
+Say:
+"The reason for these edits is that long mode cannot be entered by a normal function call. The CPU requires a precise hardware transition sequence. This part of the code directly satisfies the assignment requirement to enable Physical Address Extension, enable long mode, load CR3 with the PML4 base, enable paging, and transfer execution into [BITS 64]."
+
+Say:
+"The far jump is especially important, because it is what causes instruction fetch to continue using the 64-bit code segment after long mode is enabled."
+
+--------------------------------------------------------------------------------
+Part 2.3 - Explain the 64-bit landing code in src/kernel.asm
+--------------------------------------------------------------------------------
+
+POINT:
+- `long_mode_start` in src/kernel.asm
+
+Say:
+"At long_mode_start, execution is now in 64-bit mode. I reload the data segment registers, initialize the 64-bit stack pointer using RSP, clear RBP, and call kernel_main in C."
+
+Say:
+"I edited this section so that the debugger would clearly show 64-bit execution with RIP and RSP at kernel_main, which is one of the rubric checks."
+
+--------------------------------------------------------------------------------
+Part 2.4 - Explain src/kernel.c
+--------------------------------------------------------------------------------
+
+Open file:
+- src/kernel.c
+
+Say:
+"The next file I edited was src/kernel.c. I simplified this file into a minimal 64-bit kernel entry point so that the demo focuses on the long mode and paging requirements instead of unrelated 32-bit subsystems such as tasking, the old IDT, the TSS, filesystems, or the old paging code."
+
+Say:
+"In this file, EDIT 09 marks the new minimal VGA and debug output path, and EDIT 10 marks the simplified kernel_main used for the rubric demonstration."
+
+POINT:
+- `kernel_main`
+- `print`
+- `debug_putc`
+
+HIGHLIGHT:
+- The message strings printed in `kernel_main`
+
+Say:
+"I changed kernel_main so it initializes the terminal, prints confirmation messages, and then halts in a loop. The reason I did this was to provide a stable demonstration target for QEMU and GDB. This makes the system deterministic for the rubric checks and reduces the risk of unrelated crashes."
+
+Say:
+"The printed lines confirm that the system reached the 64-bit kernel after the bootstrap completed."
+
+--------------------------------------------------------------------------------
+Part 2.5 - Explain src/linker.ld
+--------------------------------------------------------------------------------
+
+Open file:
+- src/linker.ld
+
+Say:
+"I also restored and used a linker script in src/linker.ld. This file places the kernel at physical address 1 megabyte, which matches the bootloader's loading behavior."
+
+Say:
+"EDIT 08 marks this linker-script change."
+
+POINT:
+- `ENTRY(_start)`
+- `. = 1M;`
+
+Say:
+"This file is important because the CPU, the bootloader, the kernel symbols, and the debugger all need to agree on the address where the kernel is loaded. Without this, the kernel would either not boot correctly or GDB symbols would not line up with runtime addresses."
+
+--------------------------------------------------------------------------------
+Part 2.6 - Explain Makefile edits
+--------------------------------------------------------------------------------
+
+Open file:
+- Makefile
+
+Say:
+"The final build-system file I edited was the Makefile. I changed the project to use the x86_64 cross-compiler and reduced the active build to the minimal files needed for the rubric-focused long mode demonstration."
+
+Say:
+"In the build files, EDIT 01 marks the x86_64 toolchain target in build.sh. EDIT 02 through EDIT 05 mark the main Makefile changes, and EDIT 06 and EDIT 07 mark the compatibility updates in the sample blank program files."
+
+POINT:
+- The `FILES` line
+- The x86_64 linker rules
+- The 64-bit flags in `FLAGS`
+
+Say:
+"I edited this file because the original project was targeting a 32-bit i686 toolchain. The assignment requires x86_64 long mode, so the build system had to be migrated accordingly."
+
+================================================================================
+SECTION 3 - TASK 3.4 / TASK 4: HARDWARE-LEVEL VERIFICATION
+================================================================================
+
+Say:
+"Next, I will perform the hardware-level verification required by Task 3.4 and the grading rubric. The rubric says that print statements alone are not sufficient, so I will prove correctness using QEMU and GDB."
+
+--------------------------------------------------------------------------------
+Part 3.1 - Build the project
+--------------------------------------------------------------------------------
+
+Show terminal.
+
+Type:
+- cd /home/tcho95/Desktop/CYSEOS/PeachOS
+- make clean && make all
+
+Say:
+"I first rebuild the project from scratch to show that the kernel, boot image, and OS image are generated successfully."
+
+POINT:
+- Successful build lines
+- Output files generated in bin/
+
+Say:
+"This supports the submission requirement that the source code and build scripts are reproducible."
+
+--------------------------------------------------------------------------------
+Part 3.2 - Run QEMU normally
+--------------------------------------------------------------------------------
+
+In terminal 1, run:
+- qemu-system-x86_64 -drive format=raw,file=./bin/os.bin -no-reboot -no-shutdown
+
+Say:
+"Now I run the kernel in QEMU. This satisfies the rubric requirement that the kernel boots in QEMU and that paging-dependent output works correctly."
+
+POINT:
+- The QEMU window
+- The boot output from the kernel
+
+HIGHLIGHT:
+- The text confirming long mode and paging bootstrap
+
+Say:
+"The screen output confirms that execution reached the 64-bit kernel after the paging bootstrap."
+
+--------------------------------------------------------------------------------
+Part 3.3 - Start paused QEMU for GDB
+--------------------------------------------------------------------------------
+
+Close the normal QEMU run if needed.
+
+In terminal 1, run:
+- pkill -f "qemu-system-x86_64.*./bin/os.bin" || true
+- qemu-system-x86_64 -drive format=raw,file=./bin/os.bin -no-reboot -no-shutdown -s -S
+
+Say:
+"Next I launch QEMU again with the GDB stub enabled and the CPU paused at startup. The -s option opens the GDB server on port 1234, and the -S option pauses execution so I can attach the debugger before the system runs."
+
+Say:
+"If the QEMU window still shows the BIOS message Booting from Hard Disk, that is expected because the CPU is paused until GDB sends continue."
+
+--------------------------------------------------------------------------------
+Part 3.4 - Attach GDB
+--------------------------------------------------------------------------------
+
+In terminal 2, run:
+- cd /home/tcho95/Desktop/CYSEOS/PeachOS
+- gdb
+- set pagination off
+- add-symbol-file /home/tcho95/Desktop/CYSEOS/PeachOS/build/kernelfull.o 0x100000
+- target remote localhost:1234
+- break kernel_main
+- continue
+
+Say:
+"I now load the kernel symbols at address 0x100000, connect to QEMU through localhost port 1234, set a breakpoint at kernel_main, and continue execution."
+
+POINT:
+- The `add-symbol-file` command
+- The `target remote localhost:1234` line
+- The breakpoint hit at `kernel_main`
+
+Say:
+"The breakpoint hitting kernel_main proves that the bootstrap successfully transferred control into the 64-bit kernel entry point."
+
+================================================================================
+SECTION 4 - REQUIRED REGISTER PROOF
+================================================================================
+
+Type in GDB:
+- info registers
+
+Say:
+"The rubric requires proof that the CPU is in 64-bit mode. The register dump shows the 64-bit register set, including RAX, RSP, and RIP."
+
+POINT:
+- `rax`
+- `rsp`
+- `rip`
+
+HIGHLIGHT:
+- `rip            0x1003f0            0x1003f0 <kernel_main>`
+- `rsp            0x8fff8             0x8fff8`
+- `rax            0x80000010          2147483664`
+
+Say:
+"This proves the processor is executing in 64-bit long mode, because in 32-bit mode the instruction pointer would appear as EIP instead of RIP. This also satisfies the rubric item requiring no evidence of 32-bit execution."
+
+================================================================================
+SECTION 5 - REQUIRED CONTROL REGISTER PROOF
+================================================================================
+
+Type in GDB:
+- p/x $cr0
+- p/x $cr4
+- p/x $cr3
+
+Say:
+"Next I inspect the control registers required by the rubric."
+
+POINT:
+- `$1 = 0x80000011`
+- `$2 = 0x20`
+- `$3 = 0x102000`
+
+Say:
+"CR0 equals 0x80000011. The important part here is that the paging bit, bit 31, is set. That proves paging is enabled."
+
+Say:
+"CR4 equals 0x20. This means the PAE bit is enabled, which is required before entering long mode with 64-bit paging."
+
+Say:
+"CR3 equals 0x102000. This is the physical base address of the top-level page table, which in x86_64 is the PML4."
+
+Say:
+"These values directly satisfy the rubric items for CR0, CR4, CR3, and the explanation of their purpose."
+
+================================================================================
+SECTION 6 - REQUIRED PML4 MEMORY DUMP
+================================================================================
+
+Type in GDB:
+- x/16gx $cr3
+
+Say:
+"Now I dump the first sixteen quadwords at the address stored in CR3. Since CR3 points to the PML4, this is a direct hardware-level proof of the top-level paging structure."
+
+POINT:
+- `0x102000: 0x0000000000103023 0x0000000000000000`
+
+HIGHLIGHT:
+- The first nonzero entry: `0x0000000000103023`
+
+Say:
+"The first PML4 entry is nonzero, and the low bits contain the Present and Read/Write flags. The upper address bits point to the next paging level, which is the PDPT."
+
+Say:
+"This satisfies the rubric requirement to dump the PML4 memory and show valid present entries."
+
+================================================================================
+SECTION 7 - CLEAR EXPLANATION OF THE FOUR-LEVEL HIERARCHY
+================================================================================
+
+Open file again:
+- src/kernel.asm
+
+POINT:
+- `pml4_table`
+- `pdpt_table`
+- `pd_table`
+- `pt_table`
+
+Say:
+"The four-level paging hierarchy in this implementation is PML4 to PDPT to PD to PT. The processor walks these levels in order to translate a virtual address into a physical address."
+
+Say:
+"In my bootstrap, the first PML4 entry points to the PDPT. The first PDPT entry points to the page directory. The first page directory entry points to the page table. Then the page table contains the actual physical page mappings."
+
+Say:
+"This matches the assignment requirement for a four-level hierarchy and explains how the entries are linked together."
+
+================================================================================
+SECTION 8 - CLEAR EXPLANATION OF THE 32-BIT TO 64-BIT TRANSITION
+================================================================================
+
+Open file:
+- src/boot/boot.asm
+- then return to src/kernel.asm
+
+Say:
+"The bootloader still starts in 16-bit real mode and then moves into 32-bit protected mode. After the kernel is loaded, control transfers into kernel.asm. That file performs the long mode transition."
+
+POINT:
+- In src/boot/boot.asm, the jump into protected mode and the jump into the loaded kernel
+- In src/kernel.asm, the control-register sequence and far jump into `long_mode_start`
+
+Say:
+"The transition sequence is: create the four-level page tables, load the 64-bit GDT, enable PAE in CR4, enable long mode in EFER, load CR3 with the PML4 base, enable paging in CR0, and then perform a far jump into the 64-bit code segment. After that, execution continues in long_mode_start under [BITS 64], and kernel_main is called in 64-bit mode."
+
+Say:
+"This explanation satisfies the rubric requirement for a clear description of the 32-to-64-bit transition."
+
+================================================================================
+SECTION 9 - SUBMISSION REQUIREMENTS ALIGNMENT
+================================================================================
+
+Say:
+"Finally, I will summarize how this demo matches the submission requirements."
+
+POINT:
+- src/multilevelpaging.txt section 5
+
+Say:
+"The source code includes all modified files necessary to reproduce the result. The video demonstration shows the build, QEMU execution, GDB connection, register inspection, control register verification, and the PML4 memory dump. The written report can use the same screenshots and explanations shown here."
+
+Say:
+"The main files modified for this assignment were:"
+- `src/kernel.asm` — implemented the four-level paging bootstrap and long mode transition
+- `src/kernel.c` — created a minimal stable 64-bit kernel entry for demonstration
+- `src/linker.ld` — restored correct kernel load layout at 1 megabyte
+- `Makefile` and `build.sh` — migrated the project to the x86_64 cross-toolchain
+
+Say:
+"Each file was edited specifically to satisfy either the architecture transition requirement, the paging hierarchy requirement, or the hardware-level verification requirement."
+
+================================================================================
+SECTION 10 - CLOSING STATEMENT
+================================================================================
+
+Say:
+"In conclusion, this project now boots a 64-bit kernel in QEMU, uses a valid four-level paging hierarchy, loads the PML4 into CR3, enables paging and PAE through the control registers, and provides hardware-level proof of correctness through GDB. This completes the required implementation and verification tasks for the assignment."
+
+END OF SCRIPT
