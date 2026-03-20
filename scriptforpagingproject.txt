@@ -1,0 +1,348 @@
+PeachOS Long Mode + Four-Level Paging Project Script
+
+Author Context
+- Base repository branch: main from exploringtc/PeachOS
+- Working branch/result: feature/long-mode-paging
+- Goal: Convert the original 32-bit kernel path into a verifiable 64-bit long-mode bootstrap with working 4-level paging and hardware-level proof in QEMU + GDB.
+
+============================================================
+1) Project Objective (What this project achieves)
+============================================================
+This project demonstrates a correct x86_64 architectural transition from 32-bit protected mode into 64-bit long mode, then verifies the result using control-register and memory inspection rather than output-only behavior.
+
+Target outcomes achieved:
+1. Enter 64-bit long mode successfully.
+2. Use a valid 64-bit GDT.
+3. Enable paging correctly with CR0 and CR4.
+4. Load a valid PML4 base into CR3.
+5. Implement a functioning 4-level hierarchy: PML4 -> PDPT -> PD -> PT.
+6. Boot stably under QEMU.
+7. Prove correctness through GDB register and memory evidence.
+
+============================================================
+2) High-Level Design Choices (Why this implementation looks this way)
+============================================================
+Design decision #1: Minimize moving parts during architecture migration.
+- We intentionally reduced the active build path to the smallest set required for long-mode and paging verification.
+- Rationale: trying to carry every legacy subsystem (filesystem/tasking/interrupt-heavy flows) through an architecture jump often hides core CPU-mode bugs behind unrelated module failures.
+
+Design decision #2: Prioritize hardware-state evidence over cosmetic output.
+- Kernel printouts are useful but not sufficient.
+- We relied on GDB proof points (RIP, CR0, CR4, CR3, and PML4 dump), which directly satisfy grading requirements.
+
+Design decision #3: Keep early paging identity-mapped and simple.
+- The first 2 MiB is identity-mapped with 4 KiB pages.
+- Rationale: this keeps instruction/data addresses valid immediately after enabling paging and makes failure analysis straightforward.
+
+============================================================
+3) Exact Change Inventory from main -> current branch
+============================================================
+Modified files:
+- build.sh
+- Makefile
+- programs/blank/Makefile
+- programs/blank/blank.asm
+- src/kernel.asm
+- src/kernel.c
+- src/linker.ld
+
+Added files:
+- src/multilevelpaging.txt
+- src/multilevelpaginggradingrubric.txt
+- project script.txt
+- teleprompt script.txt
+- qemu.log
+
+============================================================
+4) Detailed Implementation Breakdown (What changed, how, and why)
+============================================================
+
+EDIT 01: build.sh toolchain target migration
+File: build.sh
+What changed:
+- TARGET changed from i686-elf to x86_64-elf.
+- Correct shebang used.
+How:
+- Exported x86_64 cross-toolchain target and kept PATH setup.
+Why:
+- 64-bit long mode requires 64-bit code generation and linking semantics.
+- Prevents mixed-architecture artifacts that can break boot or symbol mapping.
+
+EDIT 02: Reduced active kernel object list
+File: Makefile
+What changed:
+- FILES narrowed to kernel.asm.o and kernel.o for demo path.
+How:
+- Removed non-essential modules from active link list for this rubric-focused path.
+Why:
+- Isolates mode transition and paging correctness from unrelated legacy subsystems.
+
+EDIT 03: 64-bit freestanding compile configuration
+File: Makefile
+What changed:
+- Added key flags: -m64 -mno-red-zone -mcmodel=large -fno-pie -fno-stack-protector and unwind-table disabling.
+How:
+- Updated FLAGS variable used by kernel and module build rules.
+Why:
+- Bare-metal kernels cannot depend on host ABI assumptions.
+- No red zone and no PIE are common requirements for reliable kernel control flow.
+
+EDIT 04: Deterministic image composition for QEMU
+File: Makefile
+What changed:
+- all target simplified to produce boot.bin + kernel.bin -> os.bin.
+- Removed mount/copy FAT staging from the primary path.
+How:
+- Kept deterministic dd concatenation flow.
+Why:
+- Reduces non-kernel variability and keeps grading demo reproducible.
+
+EDIT 05: 64-bit assembler and linker pipeline
+File: Makefile
+What changed:
+- i686-elf-gcc/ld replaced with x86_64-elf-gcc/ld.
+- NASM object format updated to elf64.
+How:
+- Updated compile/link commands across build targets.
+Why:
+- Ensures all objects and relocation/link behavior align with x86_64 execution.
+
+EDIT 06 and EDIT 07: blank program compatibility migration
+Files: programs/blank/Makefile, programs/blank/blank.asm
+What changed:
+- blank program moved to 64-bit assembly and build flags.
+How:
+- [BITS 64] in assembly and x86_64 toolchain usage.
+Why:
+- Keeps ancillary targets compatible with global toolchain migration.
+
+EDIT 08: Linker script alignment with boot/debug assumptions
+File: src/linker.ld
+What changed:
+- Retained/clarified kernel origin at 1 MiB with page-aligned sections.
+How:
+- ENTRY(_start), OUTPUT_FORMAT(binary), and aligned .text/.rodata/.data/.bss/.asm.
+Why:
+- Bootloader load/jump address, linker origin, and GDB add-symbol-file base must agree.
+
+EDIT 11: Bootstrap constants for transition control
+File: src/kernel.asm
+What changed:
+- Added constants for selectors, stack top, IA32_EFER MSR, CR0 PG bit, CR4 PAE bit, and page flags.
+How:
+- Declared architectural constants near assembly entry.
+Why:
+- Makes mode-switch steps explicit and reduces magic numbers.
+
+EDIT 12: 32-bit -> 64-bit long-mode entry sequence
+File: src/kernel.asm
+What changed:
+- Added canonical transition logic:
+  1) setup segment registers/stack
+  2) build page tables
+  3) load 64-bit GDT with lgdt
+  4) set CR4.PAE
+  5) set EFER.LME via rdmsr/wrmsr
+  6) load CR3 with PML4 base
+  7) set CR0.PG
+  8) far jump to 64-bit code segment
+How:
+- Implemented sequence under [BITS 32] before long_mode_start label.
+Why:
+- Long mode is a staged hardware transition; order matters.
+
+EDIT 13: Four-level paging bootstrap
+File: src/kernel.asm
+What changed:
+- Constructed PML4 -> PDPT -> PD -> PT links.
+- Filled PT with 512 identity-mapped entries (4 KiB pages).
+How:
+- Wrote first entry at each upper level to point to next level with present/RW flags.
+- Loop maps physical frames from 0x00000000 to 0x001FF000.
+Why:
+- CPU page walker requires valid linked tables before PG is enabled.
+- Identity mapping keeps early instruction/data access stable.
+
+EDIT 14: First 64-bit execution path
+File: src/kernel.asm
+What changed:
+- Added [BITS 64] entry point long_mode_start.
+- Reloaded data segments, set RSP, cleared RBP, called kernel_main, then halted loop.
+How:
+- Control transfers through far jump to 64-bit code descriptor.
+Why:
+- Provides explicit proof that execution continues under 64-bit semantics.
+
+EDIT 15: 64-bit GDT and aligned table storage
+File: src/kernel.asm
+What changed:
+- Added 64-bit GDT entries using dq:
+  - null descriptor
+  - kernel code descriptor
+  - kernel data descriptor
+- Added aligned storage for pml4_table, pdpt_table, pd_table, pt_table.
+How:
+- GDT descriptor struct loaded by lgdt.
+- Paging arrays aligned to 4096 bytes.
+Why:
+- Long mode requires valid descriptor setup and aligned page-structure memory.
+
+EDIT 09 and EDIT 10: Minimal kernel runtime for verification
+File: src/kernel.c
+What changed:
+- Replaced broad subsystem initialization with deterministic output path.
+- Added debug output to port 0xE9 and VGA text output.
+- kernel_main now prints long-mode and paging status then halts.
+How:
+- Implemented compact terminal/print helpers and minimal loop.
+Why:
+- Produces stable, repeatable demo behavior for QEMU + GDB grading checks.
+
+============================================================
+5) End-to-End Execution and Verification Procedure
+============================================================
+
+A. Build
+Command:
+- make clean && make all
+Expected:
+- Successful generation of:
+  - bin/boot.bin
+  - bin/kernel.bin
+  - bin/os.bin
+
+B. Normal QEMU run (headless output capture)
+Command:
+- qemu-system-x86_64 -drive format=raw,file=./bin/os.bin -display none -debugcon stdio -no-reboot -no-shutdown
+Expected runtime messages:
+- PeachOS entered 64-bit long mode
+- 4-level paging bootstrap active
+- Use GDB to inspect RIP, CR0, CR3, CR4, and the PML4
+
+C. Debug launch for GDB
+Command:
+- qemu-system-x86_64 -drive format=raw,file=./bin/os.bin -display none -debugcon stdio -no-reboot -no-shutdown -s -S
+
+D. GDB attach and proof commands
+Commands:
+- gdb
+- add-symbol-file ./build/kernelfull.o 0x100000
+- target remote localhost:1234
+- break kernel_main
+- continue
+- info registers
+- p/x $cr0
+- p/x $cr4
+- p/x $cr3
+- x/16gx $cr3
+
+============================================================
+6) Observed Hardware-Level Evidence (from project run)
+============================================================
+- Breakpoint hit at kernel_main successfully.
+- 64-bit register context visible (RIP/RSP/RAX).
+
+Observed values:
+- rip = 0x1003f0
+- rsp = 0x8fff8
+- rax = 0x80000010
+- CR0 = 0x80000011
+  - PG bit (bit 31) set
+- CR4 = 0x20
+  - PAE bit (bit 5) set
+- CR3 = 0x102000
+  - active PML4 base
+
+PML4 dump sample:
+- First entry non-zero: 0x0000000000103023
+Interpretation:
+- Non-zero top-level entry indicates valid mapping path.
+- Low bits include present and read/write attributes.
+- Address portion points to next-level paging structure (PDPT), establishing hierarchy traversal.
+
+============================================================
+7) Address-Translation Explanation (for report narrative)
+============================================================
+In x86_64 long mode, a virtual address is translated by walking four tables:
+1) PML4
+2) PDPT
+3) PD
+4) PT
+Then the page offset is appended to produce the final physical address.
+
+This project configures the first valid chain:
+- PML4[0] -> PDPT
+- PDPT[0] -> PD
+- PD[0] -> PT
+- PT[i] -> physical frame i * 0x1000
+
+Because the mapping is identity for the first 2 MiB, code and data addresses remain valid immediately after paging is enabled, simplifying early boot stability.
+
+============================================================
+8) Challenges Encountered and How They Were Resolved
+============================================================
+Challenge 1: Architecture mismatch risk during migration.
+- Issue: Legacy 32-bit assumptions in toolchain/object format can cause boot and linkage failures.
+- Resolution: Unified toolchain and object formats around x86_64-elf + elf64.
+
+Challenge 2: Debugging noise from unrelated legacy modules.
+- Issue: Filesystem/tasking/interrupt setup can fail independently and obscure long-mode root causes.
+- Resolution: Reduced active path to minimal long-mode demonstration kernel.
+
+Challenge 3: Ensuring proof is grader-verifiable.
+- Issue: Printed output alone is not enough for rubric acceptance.
+- Resolution: Captured register and memory evidence via GDB (CR0/CR3/CR4 + PML4 dump).
+
+============================================================
+9) Rubric Alignment Summary
+============================================================
+Requirement: Kernel executes in 64-bit long mode
+- Evidence: RIP/RSP/RAX present in GDB at kernel_main.
+
+Requirement: Valid 64-bit GDT used
+- Evidence: 64-bit descriptors defined with dq and loaded via lgdt before transition.
+
+Requirement: Paging enabled via CR0 and CR4
+- Evidence: CR0=0x80000011 (PG set), CR4=0x20 (PAE set).
+
+Requirement: Correct PML4 base in CR3
+- Evidence: CR3=0x102000 and PML4 dump performed at that address.
+
+Requirement: Functioning four-level hierarchy
+- Evidence: Assembly code links PML4->PDPT->PD->PT with non-zero PML4 entry in memory dump.
+
+Requirement: Stable QEMU run
+- Evidence: Deterministic boot messages and halted steady-state loop after entering kernel_main.
+
+============================================================
+10) Suggested Report Figure Captions
+============================================================
+Figure 1: Build success with x86_64 toolchain and generated os.bin.
+Figure 2: QEMU runtime output confirming long-mode bootstrap reached kernel_main path.
+Figure 3: GDB breakpoint hit at kernel_main.
+Figure 4: 64-bit register view showing RIP/RSP/RAX.
+Figure 5: CR0 and CR4 showing PG and PAE bits enabled.
+Figure 6: CR3 showing active PML4 base address.
+Figure 7: PML4 memory dump showing non-zero valid entry.
+
+============================================================
+11) Video Demonstration Script (concise speaking order)
+============================================================
+1. Start by stating project objective: long mode + 4-level paging verification.
+2. Show build command and successful artifacts.
+3. Run QEMU and show long-mode/paging status output.
+4. Relaunch QEMU in debug mode with -s -S.
+5. Attach GDB, load symbols, set breakpoint at kernel_main, continue.
+6. Show info registers and point to RIP as proof of 64-bit mode.
+7. Show p/x $cr0 and explain PG bit set.
+8. Show p/x $cr4 and explain PAE bit set.
+9. Show p/x $cr3 and explain it is the PML4 base.
+10. Dump x/16gx $cr3 and explain non-zero entry links to PDPT.
+11. Conclude by mapping this evidence to rubric requirements.
+
+============================================================
+12) Final Conclusion
+============================================================
+Starting from the main branch baseline, the kernel path was intentionally restructured to produce a clean, verifiable 64-bit bring-up sequence. The final implementation demonstrates correct long-mode entry mechanics, valid GDT usage, correct control-register setup, valid four-level paging structures, and successful execution under QEMU, with direct hardware-level evidence gathered through GDB.
+
+End of scriptforpagingproject.txt
