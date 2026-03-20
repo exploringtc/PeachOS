@@ -1,0 +1,116 @@
+🔍-
+100%
+🔍+
+⚊
+◧
+🔄
+🔍
+✕
+⚙️
+📋 Document Outline
+No headings found
+
+Multi-Level Paging & 64-Bit Long Mode
+
+1 Overview
+
+The objective of this homework assignment is to gain practical experience with x86_64 processor architecture by converting an existing 32-bit operating system kernel into a 64-bit system using long mode and implementing a four-level paging hierarchy. Modern 64-bit processors rely on hierarchical paging and control register configuration to support large virtual address spaces and protected execution.
+
+In this assignment, students will modify both assembly and C components of the kernel to enable long mode, configure a valid 64-bit Global Descriptor Table (GDT), implement Page Map Level 4 (PML4) paging, and verify correct system behavior using QEMU and GDB. The primary emphasis of this assignment is architectural correctness and hardware-level validation rather than output-based confirmation.
+
+This covers the following concepts:
+
+Long mode transition (32-bit to 64-bit)
+Control registers CR0, CR3, and CR4
+Global Descriptor Table configuration
+Four-level paging hierarchy (PML4 → PDPT → PD → PT)
+Virtual-to-physical address translation
+Kernel debugging with GDB
+2 Assignment Environment
+
+This assignment must be completed in a Linux-based development environment with the following tools installed:
+
+NASM (or equivalent assembler)
+GCC
+QEMU (x86_64)
+GDB
+To launch your kernel normally: qemu-system-x86_64 -hda ./bin/os.bin
+To enable debugging: qemu-system-x86_64 -hda ./bin/os.bin -s -S
+Then connect using GDB:
+
+gdb
+
+add-symbol-file ./build/kernelfull.o 0x100000
+
+target remote localhost:1234
+
+3 Assignment Tasks
+
+3.1 Task 1: Enabling 64-Bit Long Mode
+
+In this task, you will modify the kernel initialization sequence to transition from 32-bit protected mode into 64-bit long mode. The transition requires enabling Physical Address Extension (PAE) in CR4, enabling Long Mode Enable (LME) in the EFER model-specific register, loading the PML4 base address into CR3, and setting the Paging (PG) bit in CR0. After configuring these registers, you must perform a far jump into a 64-bit code segment and continue execution under [BITS 64]. Control must then transfer to kernel_main written in C.
+
+To verify long mode execution, use GDB to break at kernel_main and execute:
+
+info registers
+
+You must observe 64-bit general-purpose registers such as rax, rsp, and rip. The presence of rip (instead of eip) confirms that the processor is executing in 64-bit mode.
+
+3.2 Task 2: Configuring the 64-Bit Global Descriptor Table
+
+You must define and configure a valid 64-bit GDT. The table must include a null descriptor, a 64-bit kernel code segment, and a kernel data segment. Descriptor entries must use 64-bit format (dq in assembly). The GDT must be loaded using lgdt, and segment registers must be reloaded appropriately before transitioning to long mode. Although segmentation is largely disabled in long mode, a correctly configured GDT is required for proper system initialization.
+
+3.3 Task 3: Implementing Four-Level Paging
+
+You must implement the full x86_64 paging hierarchy consisting of:
+
+Page Map Level 4 (PML4)
+Page Directory Pointer Table (PDPT)
+Page Directory (PD)
+Page Table (PT)
+All page table entries must be 64-bit (uint64_t) and must include appropriate flags such as Present and Read/Write. The paging structures must be properly aligned and linked so that the processor can traverse the hierarchy during virtual-to-physical address translation. The PML4 base address must be loaded into CR3 prior to enabling paging.
+
+Your implementation should include descriptor creation logic, detection of unused (null) entries, and page mapping functionality. At minimum, kernel memory required for startup must be mapped correctly.
+
+3.4 Task 4: Hardware-Level Verification
+
+After implementing long mode and paging, you must verify correctness using GDB. Launch QEMU with debugging enabled and execute the following commands:
+
+break kernel_main
+
+continue
+
+info registers
+
+p/x $cr0
+
+p/x $cr4
+
+p/x $cr3
+
+You must confirm:
+
+The PG bit (bit 31) in CR0 is set.
+The PAE bit (bit 5) in CR4 is set.
+CR3 contains the base address of your PML4 table.
+Next, dump the PML4 contents: x/16gx <cr3_address>
+
+You must demonstrate non-zero entries and explain how PML4 entries link to PDPT, PD, and PT. Printed kernel output is not sufficient proof; control register inspection and memory analysis are required.
+
+4 Expected Outcome
+
+Upon successful completion of this assignment, your kernel should execute in 64-bit long mode, use a valid 64-bit GDT, enable paging via CR0 and CR4, load a correct PML4 base into CR3, implement a functioning four-level paging hierarchy, and run stably under QEMU. You should be able to clearly explain the purpose of each control register, the steps required to enter long mode, and how hierarchical paging performs address translation.
+
+5. Submission Requirements
+
+You must submit:
+
+Video Demonstration showing kernel build, QEMU execution, GDB connection, register inspection, control register verification, and PML4 memory dump.
+Written Report (PDF) describing implementation steps, long mode transition, GDT configuration, paging hierarchy design, screenshots of verification steps, and discussion of challenges encountered.
+Source Code including all modified files and build scripts necessary to reproduce results.
+6. References
+
+OSDev Wiki. GDT Tutorial. https://wiki.osdev.org/GDT_Tutorial
+OSDev Wiki. Paging. https://wiki.osdev.org/Paging
+OSDev Wiki. Page Tables. https://wiki.osdev.org/Page_Tables
+OSDev Wiki. Setting Up Long Mode. https://wiki.osdev.org/Setting_Up_Long_Mode

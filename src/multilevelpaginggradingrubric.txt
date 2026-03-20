@@ -1,0 +1,28 @@
+Multi-Level Paging & 64-bit Long Mode
+Grading Rubric (20 Points)
+Category Requirement Points
+GDB breakpoint at kernel_main shown 1
+info registers shows r-type registers (rax, rsp, rip) 2
+Clear explanation why this proves 64-bit mode 1
+No evidence of 32-bit mode (no eip) 1
+CR0 shown and PG bit enabled 2
+CR4 shown and PAE enabled 1
+CR3 shown with valid PML4 address 1
+Brief explanation of these registers 1
+PML4 memory dump (x/16gx <cr3>) 2
+Valid entries shown (Present bit set) 1
+Clear explanation of 4-level paging hierarchy 2
+Kernel boots in QEMU 1
+Paging-dependent output works correctly 1
+No crash during demo 1
+Clear explanation of 32→64-bit transition 1
+Organized screenshots and clarity 1
+Total: 20 Points
+Important:
+Hardware proof (GDB + CR registers + PML4 dump) is required.
+Print statements alone are not sufficient for full credit.
+1. Long Mode
+2. Paging Registers 
+3. Page Table Proof
+4. Functional Demo
+5. Written Report
