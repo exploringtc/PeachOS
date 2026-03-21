@@ -1,0 +1,126 @@
+PeachOS Video Demonstration
+Steps + Narration Script
+
+============================================================
+PART 1: ON-SCREEN STEPS (What to do)
+============================================================
+
+1) Open terminal and go to project folder
+cd /home/tcho95/Desktop/CYSEOS/PeachOS
+
+2) Build the kernel
+make clean && make all
+
+3) Run kernel normally (boot proof)
+qemu-system-x86_64 -hda ./bin/os.bin
+
+What to show:
+- Kernel boots
+- Long mode / paging status text appears
+
+Then stop QEMU (Ctrl+C or close window).
+
+4) Start QEMU in debug-wait mode
+qemu-system-x86_64 -hda ./bin/os.bin -s -S
+
+Keep this terminal/window running.
+
+5) Open a second terminal, then start GDB
+cd /home/tcho95/Desktop/CYSEOS/PeachOS
+gdb
+
+6) In GDB, load symbols and connect
+add-symbol-file ./build/kernelfull.o 0x100000
+target remote localhost:1234
+break kernel_main
+continue
+
+What to show:
+- Breakpoint is hit at kernel_main
+
+7) Inspect 64-bit registers (long mode proof)
+info registers rip rsp rax
+
+What to show:
+- rip, rsp, and rax are visible
+
+8) Verify control registers
+p/x $cr0
+p/x $cr4
+p/x $cr3
+
+What to show and explain:
+- CR0 has PG bit set (paging enabled)
+- CR4 has PAE bit set
+- CR3 contains PML4 base address
+
+9) Dump PML4 memory
+x/16gx $cr3
+
+What to show:
+- First entry non-zero
+- Explain this confirms valid top-level paging entry and linkage
+
+10) End the demo
+- In GDB: quit
+- Stop QEMU in the other terminal
+
+============================================================
+PART 2: WORD-FOR-WORD SCRIPT (What to say)
+============================================================
+
+Hi, this is my demonstration for the PeachOS long mode and four-level paging assignment.
+
+First, I am in the project directory, and I build the kernel using make clean and make all.
+The build completes successfully and generates the OS image.
+
+Now I run QEMU normally using qemu-system-x86_64 -hda ./bin/os.bin.
+Here, the kernel boots and prints the expected status messages, including confirmation that it entered 64-bit long mode and activated the paging bootstrap.
+
+Next, I restart QEMU in debug mode using -s -S.
+This pauses execution and opens a GDB server on port 1234.
+
+In a second terminal, I start GDB, load symbols with add-symbol-file ./build/kernelfull.o 0x100000, connect with target remote localhost:1234, set a breakpoint at kernel_main, and continue.
+The breakpoint is hit at kernel_main, confirming control transferred from assembly startup into C kernel code.
+
+Now I inspect registers with info registers rip rsp rax.
+I can see 64-bit registers such as rip and rsp, which confirms the CPU is executing in 64-bit long mode.
+
+Next, I verify control registers.
+Using p/x $cr0, I confirm paging is enabled because the PG bit is set.
+Using p/x $cr4, I confirm PAE is enabled.
+Using p/x $cr3, I confirm it contains the base address of the PML4 table.
+
+Finally, I dump the PML4 with x/16gx $cr3.
+The first entry is non-zero, which confirms that the top-level paging structure is valid and linked to the next paging level.
+
+This demonstrates successful kernel build, QEMU execution, GDB connection, 64-bit register inspection, control register verification, and PML4 memory dump.
+Thank you.
+
+============================================================
+PART 3: QUICK COMMAND BLOCK (Copy/Paste)
+============================================================
+
+# Terminal 1
+cd /home/tcho95/Desktop/CYSEOS/PeachOS
+make clean && make all
+qemu-system-x86_64 -hda ./bin/os.bin
+
+# Terminal 1 (debug run)
+qemu-system-x86_64 -hda ./bin/os.bin -s -S
+
+# Terminal 2
+cd /home/tcho95/Desktop/CYSEOS/PeachOS
+gdb
+
+# GDB commands
+add-symbol-file ./build/kernelfull.o 0x100000
+target remote localhost:1234
+break kernel_main
+continue
+info registers rip rsp rax
+p/x $cr0
+p/x $cr4
+p/x $cr3
+x/16gx $cr3
+quit

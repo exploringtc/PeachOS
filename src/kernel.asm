@@ -5,7 +5,8 @@ section .text
 global _start
 extern kernel_main
 
-; EDIT 11: These bootstrap constants define the selectors, stack, MSR, and control-register flags needed to enter 64-bit long mode with four-level paging.
+; EDIT 11: These bootstrap constants define the selectors, stack, MSR, and control-register 
+;flags needed to enter 64-bit long mode with four-level paging.
 CODE_SEG equ 0x08
 DATA_SEG equ 0x10
 STACK_TOP equ 0x00090000
@@ -14,7 +15,8 @@ CR0_PG equ 0x80000000
 CR4_PAE equ 0x00000020
 PAGE_PRESENT_WRITE equ 0x03
 
-; EDIT 12: This startup block performs the 32-bit to 64-bit transition by loading the 64-bit GDT, enabling PAE and LME, loading CR3 with the PML4, enabling paging, and far-jumping into 64-bit code.
+; EDIT 12: This startup block performs the 32-bit to 64-bit transition by loading the 64-bit GDT, 
+; enabling PAE and LME, loading CR3 with the PML4, enabling paging, and far-jumping into 64-bit code.
 _start:
     cli
 
@@ -48,7 +50,8 @@ _start:
 
     jmp CODE_SEG:long_mode_start
 
-; EDIT 13: This routine builds the required four-level paging hierarchy (PML4 -> PDPT -> PD -> PT) and identity-maps the first 2 MiB with 4 KiB pages for early boot.
+; EDIT 13: This routine builds the required four-level paging hierarchy (PML4 -> PDPT -> PD -> PT) 
+; and identity-maps the first 2 MiB with 4 KiB pages for early boot.
 setup_page_tables:
     mov eax, pdpt_table
     or eax, PAGE_PRESENT_WRITE
@@ -81,7 +84,8 @@ setup_page_tables:
     ret
 
 [BITS 64]
-; EDIT 14: This is the first 64-bit code path, where the segment registers and stack are reloaded before calling kernel_main in long mode.
+; EDIT 14: This is the first 64-bit code path, where the segment registers and 
+; stack are reloaded before calling kernel_main in long mode.
 long_mode_start:
     mov ax, DATA_SEG
     mov ds, ax
@@ -100,7 +104,8 @@ long_mode_start:
 
 section .rodata
 align 8
-; EDIT 15: This 64-bit GDT and these aligned paging tables provide the descriptor state and storage required for the long mode and PML4 demonstration in the project.
+; EDIT 15: This 64-bit GDT and these aligned paging tables provide the descriptor state and 
+;storage required for the long mode and PML4 demonstration in the project.
 gdt64:
     dq 0x0000000000000000
     dq 0x00209A0000000000
