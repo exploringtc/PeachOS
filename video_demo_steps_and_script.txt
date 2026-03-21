@@ -1,104 +1,278 @@
 PeachOS Video Demonstration
-Steps + Narration Script
+Integrated Teleprompter + Code Walkthrough + Live Commands
+
+Use this file from top to bottom while recording. Each step contains:
+1) What to do on screen
+2) What to say (teleprompter)
+3) What code to show and explain
 
 ============================================================
-PART 1: ON-SCREEN STEPS (What to do)
+STEP 0 — Intro (5–10 seconds)
 ============================================================
 
-1) Open terminal and go to project folder
+ON SCREEN (do):
+- Open terminal in project folder.
+
+TELEPROMPTER (say):
+"Hi, this is my PeachOS demonstration for long mode and four-level paging. In this video I will show the kernel build, QEMU execution, GDB connection, register checks, control register verification, and PML4 memory dump."
+
+CODE EXPLANATION (show):
+- No code yet.
+
+============================================================
+STEP 1 — Build the kernel
+============================================================
+
+ON SCREEN (do):
 cd /home/tcho95/Desktop/CYSEOS/PeachOS
-
-2) Build the kernel
 make clean && make all
 
-3) Run kernel normally (boot proof)
+TELEPROMPTER (say):
+"First, I build the kernel from source. The build completes successfully and produces the OS image at ./bin/os.bin."
+
+CODE EXPLANATION (show):
+- Optional quick glance at Makefile build target.
+
+============================================================
+STEP 2 — Normal QEMU boot proof
+============================================================
+
+ON SCREEN (do):
 qemu-system-x86_64 -hda ./bin/os.bin
 
-What to show:
-- Kernel boots
-- Long mode / paging status text appears
+TELEPROMPTER (say):
+"Now I run the kernel normally in QEMU. The output confirms that PeachOS entered 64-bit long mode and activated the four-level paging bootstrap path."
 
-Then stop QEMU (Ctrl+C or close window).
+CODE EXPLANATION (show):
+- Show src/kernel.c lines printing:
+  - "PeachOS entered 64-bit long mode"
+  - "4-level paging bootstrap active"
 
-4) Start QEMU in debug-wait mode
+Then stop QEMU and continue.
+
+============================================================
+STEP 3 — Start debug session with QEMU -s -S
+============================================================
+
+ON SCREEN (do):
 qemu-system-x86_64 -hda ./bin/os.bin -s -S
 
-Keep this terminal/window running.
+TELEPROMPTER (say):
+"Next I restart QEMU in debug wait mode using -s -S. This pauses the CPU at startup and opens a GDB server on localhost port 1234."
 
-5) Open a second terminal, then start GDB
+CODE EXPLANATION (show):
+- No code change here; this is runtime setup for verification.
+
+============================================================
+STEP 4 — GDB connect and breakpoint at kernel_main
+============================================================
+
+ON SCREEN (do) [new terminal]:
 cd /home/tcho95/Desktop/CYSEOS/PeachOS
 gdb
 
-6) In GDB, load symbols and connect
+Inside GDB:
 add-symbol-file ./build/kernelfull.o 0x100000
 target remote localhost:1234
 break kernel_main
 continue
 
-What to show:
-- Breakpoint is hit at kernel_main
+TELEPROMPTER (say):
+"In GDB, I load symbols at 0x100000, connect to QEMU, set a breakpoint at kernel_main, and continue. Hitting this breakpoint confirms that control moved from assembly startup into C kernel code."
 
-7) Inspect 64-bit registers (long mode proof)
+CODE EXPLANATION (show):
+- Show src/kernel.asm block from _start through call kernel_main flow.
+
+============================================================
+STEP 5 — Explain kernel.asm constants (top block)
+============================================================
+
+ON SCREEN (do):
+- Open src/kernel.asm and highlight constants near top.
+
+TELEPROMPTER (say):
+"These constants define the selectors and control bits used during transition. CODE_SEG and DATA_SEG are GDT selectors. IA32_EFER is the model specific register for long mode enable. CR4_PAE and CR0_PG are the required control bits for paging and long mode activation."
+
+CODE EXPLANATION (show):
+CODE_SEG equ 0x08
+DATA_SEG equ 0x10
+STACK_TOP equ 0x00090000
+IA32_EFER equ 0xC0000080
+CR0_PG equ 0x80000000
+CR4_PAE equ 0x00000020
+PAGE_PRESENT_WRITE equ 0x03
+
+============================================================
+STEP 6 — Explain _start transition sequence
+============================================================
+
+ON SCREEN (do):
+- Keep src/kernel.asm open and highlight _start block.
+
+TELEPROMPTER (say):
+"In _start, interrupts are disabled, segment registers and stack are initialized, and setup_page_tables is called. Then the 64-bit GDT is loaded. After that, CR4.PAE is enabled, EFER.LME is enabled, CR3 is loaded with the PML4 base, and CR0.PG enables paging. Finally, a far jump transfers execution into the 64-bit code segment at long_mode_start."
+
+CODE EXPLANATION (show):
+_start:
+	cli
+	mov ax, DATA_SEG
+	mov ds, ax
+	mov es, ax
+	mov ss, ax
+	mov fs, ax
+	mov gs, ax
+	mov esp, STACK_TOP
+	call setup_page_tables
+	lgdt [gdt64_descriptor]
+	mov eax, cr4
+	or eax, CR4_PAE
+	mov cr4, eax
+	mov ecx, IA32_EFER
+	rdmsr
+	or eax, 0x00000100
+	wrmsr
+	mov eax, pml4_table
+	mov cr3, eax
+	mov eax, cr0
+	or eax, CR0_PG
+	mov cr0, eax
+	jmp CODE_SEG:long_mode_start
+
+============================================================
+STEP 7 — Explain paging hierarchy setup
+============================================================
+
+ON SCREEN (do):
+- Highlight setup_page_tables in src/kernel.asm.
+
+TELEPROMPTER (say):
+"This block creates the four-level paging chain. PML4 entry zero points to PDPT, PDPT entry zero points to PD, and PD entry zero points to PT. Each entry is marked present and writable."
+
+CODE EXPLANATION (show):
+setup_page_tables:
+	mov eax, pdpt_table
+	or eax, PAGE_PRESENT_WRITE
+	mov [pml4_table], eax
+	mov dword [pml4_table + 4], 0
+	mov eax, pd_table
+	or eax, PAGE_PRESENT_WRITE
+	mov [pdpt_table], eax
+	mov dword [pdpt_table + 4], 0
+	mov eax, pt_table
+	or eax, PAGE_PRESENT_WRITE
+	mov [pd_table], eax
+	mov dword [pd_table + 4], 0
+
+============================================================
+STEP 8 — Explain identity map loop
+============================================================
+
+ON SCREEN (do):
+- Continue highlighting .map_pt loop in src/kernel.asm.
+
+TELEPROMPTER (say):
+"This loop fills 512 page-table entries. Each entry maps one 4 KiB page, so the first 2 MiB is identity-mapped. Identity mapping means virtual and physical addresses match during early boot."
+
+CODE EXPLANATION (show):
+	mov edi, pt_table
+	xor ebx, ebx
+	mov ecx, 512
+.map_pt:
+	mov eax, ebx
+	or eax, PAGE_PRESENT_WRITE
+	mov [edi], eax
+	mov dword [edi + 4], 0
+	add ebx, 0x1000
+	add edi, 8
+	loop .map_pt
+
+============================================================
+STEP 9 — Explain 64-bit entry point and GDT
+============================================================
+
+ON SCREEN (do):
+- Highlight [BITS 64] block and gdt64 section.
+
+TELEPROMPTER (say):
+"After the far jump, execution continues in this [BITS 64] block. The stack is moved to RSP and kernel_main is called. Below that is the 64-bit GDT: null descriptor, kernel code descriptor, and kernel data descriptor."
+
+CODE EXPLANATION (show):
+[BITS 64]
+long_mode_start:
+	mov ax, DATA_SEG
+	mov ds, ax
+	mov es, ax
+	mov ss, ax
+	mov fs, ax
+	mov gs, ax
+	mov rsp, STACK_TOP
+	xor rbp, rbp
+	call kernel_main
+
+gdt64:
+	dq 0x0000000000000000
+	dq 0x00209A0000000000
+	dq 0x0000920000000000
+
+============================================================
+STEP 10 — Register inspection (64-bit proof)
+============================================================
+
+ON SCREEN (do) [in GDB]:
 info registers rip rsp rax
 
-What to show:
-- rip, rsp, and rax are visible
+TELEPROMPTER (say):
+"Now I inspect registers. Seeing RIP and RSP confirms 64-bit execution state, which proves the long mode transition succeeded."
 
-8) Verify control registers
+CODE EXPLANATION (show):
+- Connect this back to jmp CODE_SEG:long_mode_start and call kernel_main.
+
+============================================================
+STEP 11 — Control register verification
+============================================================
+
+ON SCREEN (do) [in GDB]:
 p/x $cr0
 p/x $cr4
 p/x $cr3
 
-What to show and explain:
-- CR0 has PG bit set (paging enabled)
-- CR4 has PAE bit set
-- CR3 contains PML4 base address
+TELEPROMPTER (say):
+"CR0 shows paging enabled through the PG bit. CR4 shows PAE enabled. CR3 contains the base address of the PML4 table. These values match the required long mode setup sequence in the assembly code."
 
-9) Dump PML4 memory
+CODE EXPLANATION (show):
+- Point to instructions:
+  - mov eax, cr4 / or eax, CR4_PAE / mov cr4, eax
+  - mov eax, pml4_table / mov cr3, eax
+  - mov eax, cr0 / or eax, CR0_PG / mov cr0, eax
+
+============================================================
+STEP 12 — PML4 memory dump verification
+============================================================
+
+ON SCREEN (do) [in GDB]:
 x/16gx $cr3
 
-What to show:
-- First entry non-zero
-- Explain this confirms valid top-level paging entry and linkage
+TELEPROMPTER (say):
+"This is the PML4 memory dump. The first entry is non-zero, which confirms a valid top-level paging entry and linkage to the next level. This proves the hierarchy is active, not just declared in code."
 
-10) End the demo
-- In GDB: quit
-- Stop QEMU in the other terminal
+CODE EXPLANATION (show):
+- Tie result to setup_page_tables where pml4_table[0] is filled.
 
 ============================================================
-PART 2: WORD-FOR-WORD SCRIPT (What to say)
+STEP 13 — Closing statement
 ============================================================
 
-Hi, this is my demonstration for the PeachOS long mode and four-level paging assignment.
+ON SCREEN (do):
+- Quit GDB and stop QEMU.
 
-First, I am in the project directory, and I build the kernel using make clean and make all.
-The build completes successfully and generates the OS image.
+Commands:
+quit
 
-Now I run QEMU normally using qemu-system-x86_64 -hda ./bin/os.bin.
-Here, the kernel boots and prints the expected status messages, including confirmation that it entered 64-bit long mode and activated the paging bootstrap.
-
-Next, I restart QEMU in debug mode using -s -S.
-This pauses execution and opens a GDB server on port 1234.
-
-In a second terminal, I start GDB, load symbols with add-symbol-file ./build/kernelfull.o 0x100000, connect with target remote localhost:1234, set a breakpoint at kernel_main, and continue.
-The breakpoint is hit at kernel_main, confirming control transferred from assembly startup into C kernel code.
-
-Now I inspect registers with info registers rip rsp rax.
-I can see 64-bit registers such as rip and rsp, which confirms the CPU is executing in 64-bit long mode.
-
-Next, I verify control registers.
-Using p/x $cr0, I confirm paging is enabled because the PG bit is set.
-Using p/x $cr4, I confirm PAE is enabled.
-Using p/x $cr3, I confirm it contains the base address of the PML4 table.
-
-Finally, I dump the PML4 with x/16gx $cr3.
-The first entry is non-zero, which confirms that the top-level paging structure is valid and linked to the next paging level.
-
-This demonstrates successful kernel build, QEMU execution, GDB connection, 64-bit register inspection, control register verification, and PML4 memory dump.
-Thank you.
+TELEPROMPTER (say):
+"This demonstration showed successful kernel build, normal QEMU boot, GDB attachment, 64-bit register proof, control register verification, and PML4 dump confirmation. Together, these verify correct long mode transition and working four-level paging in PeachOS. Thank you."
 
 ============================================================
-PART 3: QUICK COMMAND BLOCK (Copy/Paste)
+QUICK COMMAND CHEAT SHEET (for practice)
 ============================================================
 
 # Terminal 1
