@@ -59,7 +59,6 @@ restore_general_purpose_registers:
     mov ecx, [ebx+20]
     mov eax, [ebx+24]
     mov ebx, [ebx+12]
-    ; we want to pop the base pointer not the stack pointer
     pop ebp
     ret
 
