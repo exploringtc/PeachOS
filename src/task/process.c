@@ -8,6 +8,7 @@
 #include "memory/heap/kheap.h"
 #include "memory/paging/paging.h"
 #include "kernel.h"
+#include <stdbool.h>
 
 // The current process that is running
 struct process* current_process = 0;
@@ -32,6 +33,82 @@ struct process* process_get(int process_id)
     }
 
     return processes[process_id];
+}
+
+int process_switch(struct process* process)
+{
+    current_process = process;
+    return 0;
+}
+
+static int process_find_free_allocation_index(struct process* process)
+{
+    int res = -ENOMEM;
+    for (int i = 0; i < PEACHOS_MAX_PROGRAM_ALLOCATIONS; i++)
+    {
+        if (process->allocations[i] == 0)
+        {
+            res = i;
+            break;
+        }
+    }
+
+    return res;
+}
+
+void* process_malloc(struct process* process, size_t size)
+{
+    void* ptr = kzalloc(size);
+    if (!ptr)
+    {
+        return 0;
+    }
+
+    int index = process_find_free_allocation_index(process);
+    if (index < 0)
+    {
+        return 0;
+    }
+
+    process->allocations[index] = ptr;
+    return ptr;
+}
+
+static bool process_is_process_pointer(struct process* process, void* ptr)
+{
+    for (int i = 0; i < PEACHOS_MAX_PROGRAM_ALLOCATIONS; i++)
+    {
+        if (process->allocations[i] == ptr)
+            return true;
+    }
+
+    return false;
+}
+
+static void process_allocation_unjoin(struct process* process, void* ptr)
+{
+    for (int i = 0; i < PEACHOS_MAX_PROGRAM_ALLOCATIONS; i++)
+    {
+        if (process->allocations[i] == ptr)
+        {
+            process->allocations[i] = 0x00;
+        }
+    }
+}
+
+void process_free(struct process* process, void* ptr)
+{
+    // Not this processes pointer? Then we cant free it.
+    if (!process_is_process_pointer(process, ptr))
+    {
+        return;
+    }
+
+    // Unjoin the allocation
+    process_allocation_unjoin(process, ptr);
+
+    // We can now free the memory.
+    kfree(ptr);
 }
 
 static int process_load_binary(const char* filename, struct process* process)
@@ -64,6 +141,7 @@ static int process_load_binary(const char* filename, struct process* process)
         goto out;
     }
 
+    process->filetype = PROCESS_FILETYPE_BINARY;
     process->ptr = program_data_ptr;
     process->size = stat.filesize;
 
@@ -124,6 +202,17 @@ out:
     return res;
 }
 
+int process_load_switch(const char* filename, struct process** process)
+{
+    int res = process_load(filename, process);
+    if (res == 0)
+    {
+        process_switch(*process);
+    }
+
+    return res;
+}
+
 int process_load_for_slot(const char* filename, struct process** process, int process_slot)
 {
     int res = 0;
@@ -164,7 +253,7 @@ int process_load_for_slot(const char* filename, struct process** process, int pr
 
     // Create a task
     task = task_new(_process);
-    if (ERROR_I(task) == 0)
+    if (ERROR_I(task) < 0)
     {
         res = ERROR_I(task);
         goto out;

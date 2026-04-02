@@ -1,0 +1,5 @@
+# Local build outputs
+build/
+
+# Installed PeachOS program binaries
+PeachOS/programs/*.elf

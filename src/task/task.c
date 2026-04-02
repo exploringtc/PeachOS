@@ -194,6 +194,12 @@ void task_run_first_ever_task()
     }
 
     task_switch(task_head);
+    memset(&task_head->registers, 0, sizeof(task_head->registers));
+    task_head->registers.ip = PEACHOS_PROGRAM_VIRTUAL_ADDRESS;
+    task_head->registers.cs = USER_CODE_SEGMENT;
+    task_head->registers.ss = USER_DATA_SEGMENT;
+    task_head->registers.esp = PEACHOS_PROGRAM_VIRTUAL_STACK_ADDRESS_START;
+    task_head->registers.flags = 0x200;
     task_return(&task_head->registers);
 }
 
@@ -201,7 +207,7 @@ int task_init(struct task *task, struct process *process)
 {
     memset(task, 0, sizeof(struct task));
     // Map the entire 4GB address space to its self
-    task->page_directory = paging_new_4gb(PAGING_IS_PRESENT | PAGING_ACCESS_FROM_ALL);
+    task->page_directory = paging_new_4gb(PAGING_IS_PRESENT | PAGING_ACCESS_FROM_ALL | PAGING_IS_WRITEABLE);
     if (!task->page_directory)
     {
         return -EIO;

@@ -96,7 +96,7 @@ int heap_get_start_block(struct heap* heap, uint32_t total_blocks)
         }
     }
 
-    if (bs == -1)
+    if (bs == -1 || bc != (int)total_blocks)
     {
         return -ENOMEM;
     }
@@ -113,21 +113,21 @@ void* heap_block_to_address(struct heap* heap, int block)
 void heap_mark_blocks_taken(struct heap* heap, int start_block, int total_blocks)
 {
     int end_block = (start_block + total_blocks)-1;
-    
-    HEAP_BLOCK_TABLE_ENTRY entry = HEAP_BLOCK_TABLE_ENTRY_TAKEN | HEAP_BLOCK_IS_FIRST;
-    if (total_blocks > 1)
-    {
-        entry |= HEAP_BLOCK_HAS_NEXT;
-    }
 
     for (int i = start_block; i <= end_block; i++)
     {
-        heap->table->entries[i] = entry;
-        entry = HEAP_BLOCK_TABLE_ENTRY_TAKEN;
-        if (i != end_block -1)
+        HEAP_BLOCK_TABLE_ENTRY entry = HEAP_BLOCK_TABLE_ENTRY_TAKEN;
+        if (i == start_block)
+        {
+            entry |= HEAP_BLOCK_IS_FIRST;
+        }
+
+        if (i != end_block)
         {
             entry |= HEAP_BLOCK_HAS_NEXT;
         }
+
+        heap->table->entries[i] = entry;
     }
 }
 
