@@ -102,6 +102,8 @@ all: ./bin/boot.bin ./bin/kernel.bin user_programs
 ./build/string/string.o: ./src/string/string.c
 	i686-elf-gcc $(INCLUDES) -I./src/string $(FLAGS) -std=gnu99 -c ./src/string/string.c -o ./build/string/string.o
 
+.PHONY: all user_programs user_programs_clean clean smoke-test
+
 user_programs:
 	cd ./programs/blank && $(MAKE) all
 
@@ -114,3 +116,6 @@ clean: user_programs_clean
 	rm -rf ./bin/os.bin
 	rm -rf ${FILES}
 	rm -rf ./build/kernelfull.o
+
+smoke-test:
+	bash ./scripts/smoke-test.sh
